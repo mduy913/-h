@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>vuducvinh Shop</title>
+    <style>
+        :root { --p: #ffafbd; --pd: #ff85a1; --pl: #ffeef2; }
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: var(--pl); font-family: sans-serif; }
+        .box { width: 350px; background: #fff; border-radius: 30px; padding: 20px; border: 2px solid #fff; box-shadow: 0 10px 20px rgba(0,0,0,0.1); text-align: center; }
+        .auth, .main { display: none; }
+        .show { display: block !important; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 15px; border: 1px solid var(--p); box-sizing: border-box; }
+        .btn { width: 100%; background: var(--pd); color: #fff; border: none; padding: 10px; border-radius: 15px; font-weight: bold; cursor: pointer; }
+        .items { max-height: 400px; overflow-y: auto; margin-top: 15px; }
+        .card { background: var(--pl); margin-bottom: 8px; padding: 12px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; text-align: left; }
+        .card b { display: block; font-size: 14px; }
+        .card span { color: var(--pd); font-weight: bold; font-size: 13px; }
+        #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10; justify-content: center; align-items: center; }
+    </style>
+</head>
+<body>
+<div class="box">
+    <div id="auth-ui" class="auth show">
+        <h2 id="title" style="color:var(--pd)">ĐĂNG NHẬP</h2>
+        <input type="text" id="user" placeholder="Tên đăng nhập">
+        <input type="password" id="pass" placeholder="Mật khẩu">
+        <button class="btn" onclick="auth()">XÁC NHẬN</button>
+        <p onclick="swap()" style="font-size:12px; cursor:pointer; color:gray;">Đăng ký / Đăng nhập</p>
+    </div>
+    <div id="main-ui" class="main">
+        <h3 style="color:var(--pd)">VUDUCVINH SHOP</h3>
+        <p style="font-size:13px;">Chào: <b id="u-name"></b> | Ví: <b id="u-bal" style="color:var(--pd)">0</b>đ</p>
+        <button class="btn" onclick="openNap()" style="width:auto; padding:5px 20px;">NẠP TIỀN</button>
+        <div id="p-list" class="items"></div>
+    </div>
+</div>
+
+<div id="modal">
+    <div class="box" style="width:300px;">
+        <h4>NẠP MBBANK</h4>
+        <input type="number" id="amt" placeholder="Nhập số tiền">
+        <button class="btn" onclick="genQR()">TẠO MÃ</button>
+        <div id="qr-box" style="display:none; margin-top:10px;">
+            <img id="qr-img" style="width:100%; border-radius:10px;">
+            <p style="font-size:12px;">Nội dung: <b id="memo" style="color:red"></b></p>
+        </div>
+        <button onclick="closeNap()" style="margin-top:10px; border:none; background:none; cursor:pointer;">Đóng</button>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, onSnapshot, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+const config = {
+    apiKey: "AIzaSyAitqDDv3eWnc-m3kEBIr-tmNByzmrlVWQ",
+    authDomain: "advinh-203ab.firebaseapp.com",
+    databaseURL: "https://advinh-203ab-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "advinh-203ab",
+    storageBucket: "advinh-203ab.appspot.com",
+    messagingSenderId: "132835424434",
+    appId: "1:132835424434:web:917c2e63ed86467503f1ab"
+};
+
+const app = initializeApp(config);
+const db = getFirestore(app);
+const rtdb = getDatabase(app);
+let curUser = null;
+
+window.swap = () => {
+    const t = document.getElementById("title");
+    t.innerText = t.innerText === "ĐĂNG NHẬP" ? "ĐĂNG KÝ" : "ĐĂNG NHẬP";
+};
+
+window.auth = async () => {
+    const u = document.getElementById("user").value.trim().toLowerCase();
+    const p = document.getElementById("pass").value;
+    if(!u || !p) return alert("Nhập đủ tin");
+    const isL = document.getElementById("title").innerText === "ĐĂNG NHẬP";
+    const r = ref(rtdb, "users/" + u);
+    const s = await get(r);
+    if(isL) {
+        if(s.exists() && s.val().password === p) start(u);
+        else alert("Sai thông tin");
+    } else {
+        if(s.exists()) return alert("Trùng tên");
+        await set(r, { username: u, password: p, balance: 0 });
+        alert("Xong!"); swap();
+    }
+};
+
+function start(u) {
+    curUser = u;
+    document.getElementById("auth-ui").classList.remove("show");
+    document.getElementById("main-ui").classList.add("show");
+    document.getElementById("u-name").innerText = u;
+    onValue(ref(rtdb, "users/" + u), s => {
+        if(s.exists()) document.getElementById("u-bal").innerText = Number(s.val().balance).toLocaleString();
+    });
+    onSnapshot(collection(db, "products"), s => {
+        let h = "";
+        s.forEach(d => {
+            const p = d.data();
+            h += `<div class="card"><div><b>${p.name}</b><span>${Number(p.price).toLocaleString()}đ</span></div>
+            <button onclick="buy('${d.id}',${p.price})" style="background:var(--pd); color:#fff; border:none; padding:5px 10px; border-radius:10px; cursor:pointer;">MUA</button></div>`;
+        });
+        document.getElementById("p-list").innerHTML = h;
+    });
+}
+
+window.openNap = () => document.getElementById("modal").style.display = "flex";
+window.closeNap = () => document.getElementById("modal").style.display = "none";
+
+window.genQR = async () => {
+    const a = document.getElementById("amt").value;
+    if(a < 1000) return alert("Tối thiểu 1k");
+    const m = curUser.toUpperCase();
+    await addDoc(collection(db, "topups"), { username: curUser, amount: Number(a), memo: m, status: "pending" });
+    document.getElementById("qr-img").src = `https://img.vietqr.io/image/MB-84740866778899-compact2.png?amount=${a}&addInfo=${m}`;
+    document.getElementById("memo").innerText = m;
+    document.getElementById("qr-box").style.display = "block";
+};
+
+window.buy = async (id, pr) => {
+    const r = ref(rtdb, "users/" + curUser);
+    const s = await get(r);
+    const b = s.val().balance || 0;
+    if(b < pr) return alert("Hết tiền");
+    if(confirm("Mua hàng?")) {
+        await set(ref(rtdb, "users/" + curUser + "/balance"), b - pr);
+        alert("Thành công");
+    }
+};
+</script>
+</body>
+</html>
